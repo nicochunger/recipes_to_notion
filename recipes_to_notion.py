@@ -10,6 +10,7 @@ from pdf2image import convert_from_path
 # Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 
@@ -40,11 +41,17 @@ def extract_text_from_image(image):
     """Use Gemini 2.0 to extract text from a base64-encoded image."""
     base64_image = image_to_base64(image)
 
-    system_prompt = (
-        """You are an AI assistant that extracts recipe information from images."""
-    )
+    user_prompt = """Extract the recipe(s) from this image. The content is in Spanish, and your 
+    output should preserve the original Spanish language. Do not translate titles, ingredients, 
+    or instructions.
 
-    user_prompt = """Extract the recipe from this image using the exact format as follows:
+    There may be more than one recipe in the image. If so, the one at the top is the main recipe. 
+    Additional recipes, sub-recipes (e.g., for sauces, toppings), or variations should be listed 
+    under Alternative Recipes, each separated using the format provided below.
+
+    If any ingredient has the quantity "C/N", replace it with "a gusto".
+
+    Use the following exact format for your response:
     
     Emoji: [Choose one appropriate emoji that best represents this recipe]
     Title: [Recipe Title]
@@ -57,8 +64,6 @@ def extract_text_from_image(image):
     Notes:
     - [any additional notes that appear handwritten at the bottom]
 
-    There might be more than one recipe in the image. If so, the one at the top is the main one.
-    The others appear below separated by dashed lines. Add these to your response and format them as follows:
     Alternative Recipes:
     1.
     Title: [Recipe Title]
