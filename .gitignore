@@ -4,6 +4,12 @@
 # PDF files
 *.pdf
 
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+
 # Python
 __pycache__/
 *.py[cod]
