@@ -16,9 +16,8 @@ contents = """A wide-format, highly detailed, ultra-photorealistic image of a fr
         placed prominently in the center of a rustic wooden table. The dish is the clear focus,
         beautifully lit with soft natural light that enhances its color and texture. Surrounding
         it, in the background or off to the side, a few of the raw ingredients used in the recipe
-        are arranged casually, slightly out of focus to keep the attention on the finished dish.
-        The atmosphere is warm and natural, evoking the feeling of a cozy, artisanal kitchen.
-        Don't include any text in the image. The recipe is: """
+        are arranged casually. The atmosphere is warm and natural, evoking the feeling of a cozy, 
+        artisanal kitchen. Don't include any text in the image. The recipe is: """
 
 # contents = """ Make a highly detailed and photorealistic image of this recipe. Don't include any
 # text, It's just so you get what the recipe is about. Make it in a wide format. The recipe: """
