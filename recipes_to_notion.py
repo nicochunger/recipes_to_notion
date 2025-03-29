@@ -34,7 +34,7 @@ def image_to_base64(image):
 
 
 def extract_text_from_image(image):
-    """Use Gemini 2.0 to extract text from a base64-encoded image."""
+    """Use Gemini 2.5 to extract text from an image."""
 
     prompt = """Extract the recipe(s) from this image. The content is in Spanish, and your 
     output should preserve the original Spanish language. Do not translate titles, ingredients, 
@@ -46,7 +46,8 @@ def extract_text_from_image(image):
 
     If any ingredient has the quantity "C/N", replace it with "a gusto".
 
-    Use the following exact format for your response:
+    Use the following exact format for your response. Make sure to include all the sections and 
+    their title as "[Section]: [Content]". Here is the recipe:
     
     Emoji: [Choose one appropriate emoji that best represents this recipe]
     Title: [Recipe Title]
