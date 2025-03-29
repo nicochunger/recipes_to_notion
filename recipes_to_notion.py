@@ -20,6 +20,7 @@ notion = Client(auth=NOTION_TOKEN)
 
 def pdf_to_images(pdf_path):
     """Convert PDF pages to images."""
+    print(f"Converting PDF '{pdf_path}' to images...")
     return convert_from_path(pdf_path, dpi=300)
 
 
@@ -35,6 +36,7 @@ def image_to_base64(image):
 
 def extract_text_from_image(image):
     """Use Gemini 2.5 to extract text from an image."""
+    print("Extracting text from image using Gemini API...")
 
     prompt = """Extract the recipe(s) from this image. The content is in Spanish, and your 
     output should preserve the original Spanish language. Do not translate titles, ingredients, 
@@ -78,11 +80,13 @@ def extract_text_from_image(image):
         model="gemini-2.5-pro-exp-03-25",
         contents=[prompt, image],
     )
+    print("Text extraction completed.")
     return response.text
 
 
 def parse_recipe_text(text):
     """Parse the recipe text into main recipe and alternative recipes."""
+    print("Parsing extracted text into structured recipe data...")
     sections = text.split("Alternative Recipes:")
     main_recipe = sections[0]
     alternative_recipes = []
@@ -148,6 +152,7 @@ def parse_recipe_text(text):
                 if recipe[1]:  # If there's a title
                     alternative_recipes.append(recipe)
 
+    print("Parsing completed.")
     return (
         main_emoji,
         main_title,
@@ -160,6 +165,8 @@ def parse_recipe_text(text):
 
 
 def create_notion_page(main_recipe, alternative_recipes):
+    """Create a new page in Notion with main recipe and alternatives."""
+    print(f"Creating Notion page for recipe: {main_recipe[1]}...")
     (
         main_emoji,
         main_title,
@@ -446,32 +453,77 @@ def create_notion_page(main_recipe, alternative_recipes):
                 "Nombre": {"title": [{"text": {"content": main_title}}]},
                 "Porciones": {"number": main_portions if main_portions else 0},
                 "Vegetariano": {"checkbox": main_vegetarian},
-                "Tags": {
-                    "multi_select": [
-                        {"name": "IAG"}
-                    ]  # Add the "Tags" property with the "IAG" tag
-                },
+                "Tags": {"multi_select": [{"name": "IAG"}]},
             },
             children=children,
         )
+        print(f"Notion page for '{main_recipe[1]}' created successfully.")
         return 200, new_page
     except Exception as e:
+        print(f"Failed to create Notion page for '{main_recipe[1]}': {e}")
         return 400, str(e)
+
+
+def generate_recipe_image(recipe_title, recipe_text):
+    """Generate an image using Gemini flash experimental model and save it to the Images folder."""
+    print(f"Generating image for recipe: {recipe_title}...")
+    import re
+    from io import BytesIO
+
+    from google.genai import types
+    from PIL import Image
+
+    # Build a prompt for image generation using the recipe's title and text
+    prompt = f"""A wide-format, highly detailed, ultra-photorealistic image of a freshly prepared dish
+        placed prominently in the center of a rustic wooden table. The dish is the clear focus,
+        beautifully lit with soft natural light that enhances its color and texture. Surrounding
+        it, in the background or off to the side, a few of the raw ingredients used in the recipe
+        are arranged casually. The atmosphere is warm and natural, evoking the feeling of a cozy, 
+        artisanal kitchen. Don't include any text in the image. The recipe is: {recipe_text}"""
+    # prompt_img = f"A wide-format, highly detailed, ultra-photorealistic image of the dish '{recipe_title}', as described: {recipe_text}"
+    response = genai_client.models.generate_content(
+        model="gemini-2.0-flash-exp-image-generation",
+        contents=prompt,
+        config=types.GenerateContentConfig(response_modalities=["Text", "Image"]),
+    )
+    for part in response.candidates[0].content.parts:
+        if part.inline_data is not None:
+            image = Image.open(BytesIO(part.inline_data.data))
+            # Ensure the Images folder exists
+            image_dir = os.path.join(os.getcwd(), "Images")
+            os.makedirs(image_dir, exist_ok=True)
+            # Sanitize recipe title for filename
+            safe_title = re.sub(r'[\\/*?:"<>|]', "", recipe_title)
+            file_path = os.path.join(image_dir, f"{safe_title}.png")
+            image.save(file_path)
+            print(f"Image for '{recipe_title}' saved to '{file_path}'.")
+            return file_path
+    print(f"Failed to generate image for '{recipe_title}'.")
+    return None
 
 
 def main(pdf_path):
     # Verify the PDF file exists
+    print(f"Verifying if the file '{pdf_path}' exists...")
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+    print(f"File '{pdf_path}' found.")
 
+    # Convert PDF to images
     images = pdf_to_images(pdf_path)
+    print(f"Converted PDF to {len(images)} image(s).")
+
+    # Extract text from images
     full_text = ""
-    for image in images:
+    for i, image in enumerate(images, start=1):
+        print(f"Processing image {i}/{len(images)}...")
         text = extract_text_from_image(image)
         full_text += text + "\n"
 
+    print("All images processed. Extracted text:")
     print(full_text)
 
+    # Parse the extracted text
     main_recipe, alternative_recipes = parse_recipe_text(full_text)
     if not main_recipe[1]:  # Check title instead of index 0 (now emoji)
         main_recipe = (
@@ -484,11 +536,20 @@ def main(pdf_path):
             main_recipe[6],
         )
 
+    # Create Notion page
     status_code, response = create_notion_page(main_recipe, alternative_recipes)
     if status_code == 200:
         print(f"Recipe '{main_recipe[1]}' successfully uploaded to Notion.")
     else:
         print(f"Failed to upload recipe. Response: {response}")
+
+    # Generate and save recipe image
+    print("Starting image generation process...")
+    image_file = generate_recipe_image(main_recipe[1], full_text)
+    if image_file:
+        print(f"Recipe image saved to {image_file}")
+    else:
+        print("No recipe image was generated.")
 
 
 if __name__ == "__main__":
@@ -496,4 +557,6 @@ if __name__ == "__main__":
     parser.add_argument("pdf_path", help="Path to the recipe PDF file")
     args = parser.parse_args()
 
+    print("Starting the recipe-to-Notion process...")
     main(args.pdf_path)
+    print("Process completed.")
