@@ -465,7 +465,7 @@ def create_notion_page(main_recipe, alternative_recipes):
 
 
 def generate_recipe_image(recipe_title, recipe_text):
-    """Generate an image using Gemini flash experimental model and save it to the Images folder."""
+    """Generate an image using Gemini 2.5 Pro for prompt generation and Gemini 2.0 Flash Experimental for image generation."""
     print(f"Generating image for recipe: {recipe_title}...")
     import re
     from io import BytesIO
@@ -473,20 +473,42 @@ def generate_recipe_image(recipe_title, recipe_text):
     from google.genai import types
     from PIL import Image
 
-    # Build a prompt for image generation using the recipe's title and text
-    prompt = f"""A wide-format, highly detailed, ultra-photorealistic image of a freshly prepared dish
-        placed prominently in the center of a rustic wooden table. The dish is the clear focus,
-        beautifully lit with soft natural light that enhances its color and texture. Surrounding
-        it, in the background or off to the side, a few of the raw ingredients used in the recipe
-        are arranged casually. The atmosphere is warm and natural, evoking the feeling of a cozy, 
-        artisanal kitchen. Don't include any text in the image. The recipe is: {recipe_text}"""
-    # prompt_img = f"A wide-format, highly detailed, ultra-photorealistic image of the dish '{recipe_title}', as described: {recipe_text}"
-    response = genai_client.models.generate_content(
+    # Step 1: Generate the image generation prompt using Gemini 2.5 Pro
+    print("Generating detailed image generation prompt using Gemini 2.5 Pro...")
+    prompt_for_prompt = f"""
+    I want you to write out a prompt for an LLM that creates images. Again you will just write the 
+    prompt itself. I have a base prompt, but you should fill it out with details about the dish. 
+    This is the base prompt:
+
+    A wide-format, highly detailed, ultra-photorealistic image of a freshly prepared dish
+    placed prominently in the center of a rustic wooden table. The dish is the clear focus,
+    beautifully lit with soft natural light that enhances its color and texture. Surrounding
+    it, in the background or off to the side, a few of the raw ingredients used in the recipe
+    are arranged casually. The atmosphere is warm and natural, evoking the feeling of a cozy,
+    artisanal kitchen.
+
+    Now I will give you a recipe of the dish and you modify and complete this prompt according to this 
+    recipe. Make sure that it's faithful to the recipe and how the final dish would look like according 
+    to how it's prepared. If the recipe has alternative dishes, use common sense to determine which 
+    one to focus on and if any of the alternative ones are side dishes to be included. Here is the recipe:
+
+    {recipe_text}
+    """
+    response_prompt = genai_client.models.generate_content(
+        model="gemini-2.5-pro-exp-03-25",
+        contents=prompt_for_prompt,
+    )
+    detailed_prompt = response_prompt.text.strip()
+    print("Detailed image generation prompt created.")
+
+    # Step 2: Generate the image using Gemini 2.0 Flash Experimental
+    print("Generating image using Gemini 2.0 Flash Experimental...")
+    response_image = genai_client.models.generate_content(
         model="gemini-2.0-flash-exp-image-generation",
-        contents=prompt,
+        contents=detailed_prompt,
         config=types.GenerateContentConfig(response_modalities=["Text", "Image"]),
     )
-    for part in response.candidates[0].content.parts:
+    for part in response_image.candidates[0].content.parts:
         if part.inline_data is not None:
             image = Image.open(BytesIO(part.inline_data.data))
             # Ensure the Images folder exists
@@ -498,6 +520,7 @@ def generate_recipe_image(recipe_title, recipe_text):
             image.save(file_path)
             print(f"Image for '{recipe_title}' saved to '{file_path}'.")
             return file_path
+
     print(f"Failed to generate image for '{recipe_title}'.")
     return None
 
