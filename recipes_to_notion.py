@@ -160,7 +160,6 @@ def parse_recipe_text(text):
 
 
 def create_notion_page(main_recipe, alternative_recipes):
-    """Create a new page in Notion with main recipe and alternatives."""
     (
         main_emoji,
         main_title,
@@ -171,50 +170,87 @@ def create_notion_page(main_recipe, alternative_recipes):
         main_notes,
     ) = main_recipe
 
-    # Create the children blocks list starting with the main recipe
+    # Build the main recipe columns using correct nested structure
     children = [
         {
             "object": "block",
-            "type": "heading_2",
-            "heading_2": {
-                "rich_text": [{"type": "text", "text": {"content": "Ingredientes"}}]
+            "type": "column_list",
+            "column_list": {
+                "children": [  # Columns go inside this children property
+                    {
+                        "object": "block",
+                        "type": "column",
+                        "column": {
+                            "children": [
+                                {
+                                    "object": "block",
+                                    "type": "heading_2",
+                                    "heading_2": {
+                                        "rich_text": [
+                                            {
+                                                "type": "text",
+                                                "text": {"content": "Ingredientes"},
+                                            }
+                                        ]
+                                    },
+                                },
+                                *[
+                                    {
+                                        "object": "block",
+                                        "type": "bulleted_list_item",
+                                        "bulleted_list_item": {
+                                            "rich_text": [
+                                                {
+                                                    "type": "text",
+                                                    "text": {"content": ingredient},
+                                                }
+                                            ]
+                                        },
+                                    }
+                                    for ingredient in main_ingredients
+                                ],
+                            ]
+                        },
+                    },
+                    {
+                        "object": "block",
+                        "type": "column",
+                        "column": {
+                            "children": [
+                                {
+                                    "object": "block",
+                                    "type": "heading_2",
+                                    "heading_2": {
+                                        "rich_text": [
+                                            {
+                                                "type": "text",
+                                                "text": {"content": "Preparación"},
+                                            }
+                                        ]
+                                    },
+                                },
+                                *[
+                                    {
+                                        "object": "block",
+                                        "type": "numbered_list_item",
+                                        "numbered_list_item": {
+                                            "rich_text": [
+                                                {
+                                                    "type": "text",
+                                                    "text": {"content": instruction},
+                                                }
+                                            ]
+                                        },
+                                    }
+                                    for instruction in main_instructions
+                                ],
+                            ]
+                        },
+                    },
+                ]
             },
         }
     ]
-
-    # Add ingredients
-    for ingredient in main_ingredients:
-        children.append(
-            {
-                "object": "block",
-                "type": "bulleted_list_item",
-                "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": ingredient}}]
-                },
-            }
-        )
-
-    # Add instructions
-    children.append(
-        {
-            "object": "block",
-            "type": "heading_2",
-            "heading_2": {
-                "rich_text": [{"type": "text", "text": {"content": "Preparación"}}]
-            },
-        }
-    )
-
-    for instruction in main_instructions:
-        children.append(
-            {
-                "object": "block",
-                "type": "numbered_list_item",
-                "numbered_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": instruction}}]
-                },
-            }
-        )
 
     # Add notes if they exist
     if main_notes:
@@ -260,7 +296,6 @@ def create_notion_page(main_recipe, alternative_recipes):
                 },
             ]
         )
-
         for (
             alt_emoji,
             alt_title,
@@ -270,6 +305,7 @@ def create_notion_page(main_recipe, alternative_recipes):
             alt_instructions,
             alt_notes,
         ) in alternative_recipes:
+            # Add alternative recipe title
             children.extend(
                 [
                     {
@@ -280,60 +316,99 @@ def create_notion_page(main_recipe, alternative_recipes):
                                 {"type": "text", "text": {"content": alt_title}}
                             ]
                         },
-                    },
-                    {
-                        "object": "block",
-                        "type": "heading_3",
-                        "heading_3": {
-                            "rich_text": [
-                                {"type": "text", "text": {"content": "Ingredientes"}}
-                            ]
-                        },
-                    },
-                ]
-            )
-
-            for ingredient in alt_ingredients:
-                children.append(
-                    {
-                        "object": "block",
-                        "type": "bulleted_list_item",
-                        "bulleted_list_item": {
-                            "rich_text": [
-                                {"type": "text", "text": {"content": ingredient}}
-                            ]
-                        },
-                    }
-                )
-
-            children.extend(
-                [
-                    {
-                        "object": "block",
-                        "type": "heading_3",
-                        "heading_3": {
-                            "rich_text": [
-                                {"type": "text", "text": {"content": "Preparación"}}
-                            ]
-                        },
                     }
                 ]
             )
-
-            for instruction in alt_instructions:
-                children.append(
-                    {
-                        "object": "block",
-                        "type": "numbered_list_item",
-                        "numbered_list_item": {
-                            "rich_text": [
-                                {"type": "text", "text": {"content": instruction}}
-                            ]
-                        },
-                    }
-                )
-
-            # Add notes for alternative recipe if they exist
+            # Build two columns for alternative recipe ingredients and instructions
+            children.append(
+                {
+                    "object": "block",
+                    "type": "column_list",
+                    "column_list": {
+                        "children": [
+                            {
+                                "object": "block",
+                                "type": "column",
+                                "column": {
+                                    "children": [
+                                        {
+                                            "object": "block",
+                                            "type": "heading_2",
+                                            "heading_2": {
+                                                "rich_text": [
+                                                    {
+                                                        "type": "text",
+                                                        "text": {
+                                                            "content": "Ingredientes"
+                                                        },
+                                                    }
+                                                ]
+                                            },
+                                        },
+                                        *[
+                                            {
+                                                "object": "block",
+                                                "type": "bulleted_list_item",
+                                                "bulleted_list_item": {
+                                                    "rich_text": [
+                                                        {
+                                                            "type": "text",
+                                                            "text": {
+                                                                "content": ingredient
+                                                            },
+                                                        }
+                                                    ]
+                                                },
+                                            }
+                                            for ingredient in alt_ingredients
+                                        ],
+                                    ]
+                                },
+                            },
+                            {
+                                "object": "block",
+                                "type": "column",
+                                "column": {
+                                    "children": [
+                                        {
+                                            "object": "block",
+                                            "type": "heading_2",
+                                            "heading_2": {
+                                                "rich_text": [
+                                                    {
+                                                        "type": "text",
+                                                        "text": {
+                                                            "content": "Preparación"
+                                                        },
+                                                    }
+                                                ]
+                                            },
+                                        },
+                                        *[
+                                            {
+                                                "object": "block",
+                                                "type": "numbered_list_item",
+                                                "numbered_list_item": {
+                                                    "rich_text": [
+                                                        {
+                                                            "type": "text",
+                                                            "text": {
+                                                                "content": instruction
+                                                            },
+                                                        }
+                                                    ]
+                                                },
+                                            }
+                                            for instruction in alt_instructions
+                                        ],
+                                    ]
+                                },
+                            },
+                        ]
+                    },
+                }
+            )
+            # Add alternative recipe notes if they exist
             if alt_notes:
                 children.extend(
                     [
@@ -348,7 +423,6 @@ def create_notion_page(main_recipe, alternative_recipes):
                         }
                     ]
                 )
-
                 for note in alt_notes:
                     children.append(
                         {
@@ -361,7 +435,6 @@ def create_notion_page(main_recipe, alternative_recipes):
                             },
                         }
                     )
-
             children.append({"object": "block", "type": "divider", "divider": {}})
 
     # Create the page with properties and icon
@@ -373,6 +446,11 @@ def create_notion_page(main_recipe, alternative_recipes):
                 "Nombre": {"title": [{"text": {"content": main_title}}]},
                 "Porciones": {"number": main_portions if main_portions else 0},
                 "Vegetariano": {"checkbox": main_vegetarian},
+                "Tags": {
+                    "multi_select": [
+                        {"name": "IAG"}
+                    ]  # Add the "Tags" property with the "IAG" tag
+                },
             },
             children=children,
         )
