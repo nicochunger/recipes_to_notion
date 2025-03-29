@@ -1,24 +1,20 @@
 import argparse
-import base64  # Import base64 for encoding images
+import base64
 import os
 
 from dotenv import load_dotenv
+from google import genai  # Revert to using Google's Gemini API
 from notion_client import Client
-from openai import OpenAI
 from pdf2image import convert_from_path
 
 # Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 
 # Configure clients
-openai_client = OpenAI(
-    api_key=GEMINI_API_KEY,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-)
+genai_client = genai.Client(api_key=GEMINI_API_KEY)  # Revert to Google Gemini client
 notion = Client(auth=NOTION_TOKEN)
 
 
@@ -39,9 +35,8 @@ def image_to_base64(image):
 
 def extract_text_from_image(image):
     """Use Gemini 2.0 to extract text from a base64-encoded image."""
-    base64_image = image_to_base64(image)
 
-    user_prompt = """Extract the recipe(s) from this image. The content is in Spanish, and your 
+    prompt = """Extract the recipe(s) from this image. The content is in Spanish, and your 
     output should preserve the original Spanish language. Do not translate titles, ingredients, 
     or instructions.
 
@@ -64,7 +59,7 @@ def extract_text_from_image(image):
     Notes:
     - [any additional notes that appear handwritten at the bottom]
 
-    Alternative Recipes:
+        Alternative Recipes:
     1.
     Title: [Recipe Title]
     Portions: [number of portions/servings]
@@ -77,26 +72,12 @@ def extract_text_from_image(image):
     (same format as before and so on for each recipe)
     """
 
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                },
-                {"type": "text", "text": user_prompt},
-            ],
-        }
-    ]
-
-    response = openai_client.chat.completions.create(
+    # Call the Gemini API to generate content
+    response = genai_client.models.generate_content(
         model="gemini-2.5-pro-exp-03-25",
-        n=1,
-        messages=messages,
+        contents=[prompt, image],
     )
-
-    return response.choices[0].message.content
+    return response.text
 
 
 def parse_recipe_text(text):
@@ -423,23 +404,6 @@ def main(pdf_path):
             main_recipe[5],
             main_recipe[6],
         )
-
-    # print(f"Main Recipe Emoji: {main_recipe[0]}")
-    # print(f"Main Recipe Title: {main_recipe[1]}")
-    # print("Main Recipe Portions:", main_recipe[2])
-    # print("Vegetarian:", main_recipe[3])
-    # print("Main Recipe Ingredients:", main_recipe[4])
-    # print("Main Recipe Instructions:", main_recipe[5])
-
-    # if alternative_recipes:
-    #     print("\nAlternative Recipes:")
-    #     for i, recipe in enumerate(alternative_recipes, 1):
-    #         print(f"\n{i}. {recipe[1]}")
-    #         print("Emoji:", recipe[0])
-    #         print("Portions:", recipe[2])
-    #         print("Vegetarian:", recipe[3])
-    #         print("Ingredients:", recipe[4])
-    #         print("Instructions:", recipe[5])
 
     status_code, response = create_notion_page(main_recipe, alternative_recipes)
     if status_code == 200:
