@@ -599,7 +599,7 @@ def main(input_path):
     elif os.path.isdir(input_path):
         # Process all PDFs in the folder
         print(f"Input is a folder: {input_path}")
-        pdf_files = [f for f in os.listdir(input_path) if f.endswith(".pdf")]
+        pdf_files = sorted([f for f in os.listdir(input_path) if f.endswith(".pdf")])
         if not pdf_files:
             print(f"No PDF files found in folder '{input_path}'.")
             return
