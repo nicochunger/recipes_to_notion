@@ -14,8 +14,8 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 
 # Set up models to be used
-TEXT_MODEL = "gemini-2.5-pro-exp-03-25"  # Model for text generation
-# TEXT_MODEL = "gemini-2.0-flash"  # Model for text generation
+# TEXT_MODEL = "gemini-2.5-pro-exp-03-25"  # Model for text generation
+TEXT_MODEL = "gemini-2.0-flash"  # Model for text generation
 IMAGE_MODEL = "gemini-2.0-flash-exp-image-generation"  # Model for image generation
 
 # Configure clients
@@ -50,7 +50,7 @@ def gemini_call(model, contents, config=None):
 
 
 def extract_text_from_image(image):
-    """Use Gemini 2.5 to extract text from an image."""
+    """Use Gemini to extract text from an image."""
     print("Extracting text from image using Gemini API...")
 
     prompt = """Extract the recipe(s) from this image. The content is in Spanish, and your 
@@ -538,83 +538,90 @@ def generate_recipe_image(recipe_title, recipe_text):
     return None
 
 
-def main(pdf_folder):
-    # Verify the folder exists
-    print(f"Verifying if the folder '{pdf_folder}' exists...")
-    if not os.path.exists(pdf_folder):
-        raise FileNotFoundError(f"Folder not found: {pdf_folder}")
-    print(f"Folder '{pdf_folder}' found.")
+def process_pdf(pdf_path):
+    """Process a single PDF file."""
+    print(f"\nProcessing file: {pdf_path}")
 
-    # Get all PDF files in the folder
-    pdf_files = [f for f in os.listdir(pdf_folder) if f.endswith(".pdf")]
-    if not pdf_files:
-        print(f"No PDF files found in folder '{pdf_folder}'.")
+    try:
+        # Convert PDF to images
+        images = pdf_to_images(pdf_path)
+        print(f"Converted PDF to {len(images)} image(s).")
+
+        # Extract text from images
+        full_text = ""
+        for i, image in enumerate(images, start=1):
+            print(f"Processing image {i}/{len(images)}...")
+            text = extract_text_from_image(image)
+            full_text += text + "\n"
+
+        print("All images processed. Extracted text:")
+        # print(full_text)
+
+        # Parse the extracted text
+        main_recipe, alternative_recipes = parse_recipe_text(full_text)
+        print(f"Parsed main recipe: {main_recipe}")
+        if not main_recipe[1]:  # Check title instead of index 0 (now emoji)
+            main_recipe = (
+                "🍽️",  # Default emoji
+                "Untitled Recipe",
+                None,
+                False,
+                main_recipe[4],
+                main_recipe[5],
+                main_recipe[6],
+            )
+
+        # Create Notion page
+        status_code, response = create_notion_page(main_recipe, alternative_recipes)
+        if status_code == 200:
+            print(f"Recipe '{main_recipe[1]}' successfully uploaded to Notion.")
+        else:
+            print(f"Failed to upload recipe. Response: {response}")
+
+        # Generate and save recipe image
+        print("Starting image generation process...")
+        image_file = generate_recipe_image(main_recipe[1], full_text)
+        if image_file:
+            print(f"Recipe image saved to {image_file}")
+        else:
+            print("No recipe image was generated.")
+
+    except Exception as e:
+        print(f"An error occurred while processing '{pdf_path}': {e}")
+
+
+def main(input_path):
+    """Process a single PDF or all PDFs in a folder."""
+    if os.path.isfile(input_path):
+        # Process a single PDF file
+        print(f"Input is a file: {input_path}")
+        process_pdf(input_path)
+    elif os.path.isdir(input_path):
+        # Process all PDFs in the folder
+        print(f"Input is a folder: {input_path}")
+        pdf_files = [f for f in os.listdir(input_path) if f.endswith(".pdf")]
+        if not pdf_files:
+            print(f"No PDF files found in folder '{input_path}'.")
+            return
+
+        print(
+            f"Found {len(pdf_files)} PDF file(s) in folder '{input_path}': {pdf_files}"
+        )
+        for pdf_file in pdf_files:
+            pdf_path = os.path.join(input_path, pdf_file)
+            process_pdf(pdf_path)
+    else:
+        print(f"Invalid input: '{input_path}' is neither a file nor a folder.")
         return
-
-    print(f"Found {len(pdf_files)} PDF file(s) in folder '{pdf_folder}': {pdf_files}")
-
-    # Process each PDF file
-    for pdf_file in pdf_files:
-        pdf_path = os.path.join(pdf_folder, pdf_file)
-        print(f"\nProcessing file: {pdf_file}")
-
-        try:
-            # Convert PDF to images
-            images = pdf_to_images(pdf_path)
-            print(f"Converted PDF to {len(images)} image(s).")
-
-            # Extract text from images
-            full_text = ""
-            for i, image in enumerate(images, start=1):
-                print(f"Processing image {i}/{len(images)}...")
-                text = extract_text_from_image(image)
-                full_text += text + "\n"
-
-            print("All images processed. Extracted text:")
-            # print(full_text)
-
-            # Parse the extracted text
-            main_recipe, alternative_recipes = parse_recipe_text(full_text)
-            print(f"Parsed main recipe: {main_recipe}")
-            if not main_recipe[1]:  # Check title instead of index 0 (now emoji)
-                main_recipe = (
-                    "🍽️",  # Default emoji
-                    "Untitled Recipe",
-                    None,
-                    False,
-                    main_recipe[4],
-                    main_recipe[5],
-                    main_recipe[6],
-                )
-
-            # Create Notion page
-            status_code, response = create_notion_page(main_recipe, alternative_recipes)
-            if status_code == 200:
-                print(f"Recipe '{main_recipe[1]}' successfully uploaded to Notion.")
-            else:
-                print(f"Failed to upload recipe. Response: {response}")
-
-            # Generate and save recipe image
-            print("Starting image generation process...")
-            image_file = generate_recipe_image(main_recipe[1], full_text)
-            if image_file:
-                print(f"Recipe image saved to {image_file}")
-            else:
-                print("No recipe image was generated.")
-
-        except Exception as e:
-            print(f"An error occurred while processing '{pdf_file}': {e}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Convert recipe PDFs in a folder to Notion pages"
-    )
+    parser = argparse.ArgumentParser(description="Convert recipe PDFs to Notion pages")
     parser.add_argument(
-        "pdf_folder", help="Path to the folder containing recipe PDF files"
+        "input_path", help="Path to a single PDF file or a folder containing PDF files"
     )
     args = parser.parse_args()
 
-    print("Starting the recipe-to-Notion process for all PDFs in the folder...")
-    main(args.pdf_folder)
+    print("Starting the recipe-to-Notion process...")
+    main(args.input_path)
     print("Process completed.")
