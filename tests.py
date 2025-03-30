@@ -58,4 +58,3 @@ for part in response.candidates[0].content.parts:
     elif part.inline_data is not None:
         image = Image.open(BytesIO((part.inline_data.data)))
         image.save("gemini-native-image.png")
-        image.show()
