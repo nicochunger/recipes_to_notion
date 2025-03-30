@@ -13,6 +13,11 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 
+# Set up models to be used
+TEXT_MODEL = "gemini-2.5-pro-exp-03-25"  # Model for text generation
+# TEXT_MODEL = "gemini-2.0-flash"  # Model for text generation
+IMAGE_MODEL = "gemini-2.0-flash-exp-image-generation"  # Model for image generation
+
 # Configure clients
 genai_client = genai.Client(api_key=GEMINI_API_KEY)  # Revert to Google Gemini client
 notion = Client(auth=NOTION_TOKEN)
@@ -32,6 +37,16 @@ def image_to_base64(image):
     image.save(buffer, format="JPEG")
     buffer.seek(0)
     return base64.b64encode(buffer.read()).decode("utf-8")
+
+
+def gemini_call(model, contents, config=None):
+    """Call the Gemini API to generate content."""
+    response = genai_client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=config,
+    )
+    return response
 
 
 def extract_text_from_image(image):
@@ -76,8 +91,8 @@ def extract_text_from_image(image):
     """
 
     # Call the Gemini API to generate content
-    response = genai_client.models.generate_content(
-        model="gemini-2.5-pro-exp-03-25",
+    response = gemini_call(
+        model=TEXT_MODEL,
         contents=[prompt, image],
     )
     print("Text extraction completed.")
@@ -494,17 +509,15 @@ def generate_recipe_image(recipe_title, recipe_text):
 
     {recipe_text}
     """
-    response_prompt = genai_client.models.generate_content(
-        model="gemini-2.5-pro-exp-03-25",
-        contents=prompt_for_prompt,
-    )
+    # Step 1: Call the Gemini API to generate the detailed prompt
+    response_prompt = gemini_call(TEXT_MODEL, prompt_for_prompt)
     detailed_prompt = response_prompt.text.strip()
     print("Detailed image generation prompt created.")
 
     # Step 2: Generate the image using Gemini 2.0 Flash Experimental
     print("Generating image using Gemini 2.0 Flash Experimental...")
-    response_image = genai_client.models.generate_content(
-        model="gemini-2.0-flash-exp-image-generation",
+    response_image = gemini_call(
+        IMAGE_MODEL,
         contents=detailed_prompt,
         config=types.GenerateContentConfig(response_modalities=["Text", "Image"]),
     )
@@ -525,61 +538,83 @@ def generate_recipe_image(recipe_title, recipe_text):
     return None
 
 
-def main(pdf_path):
-    # Verify the PDF file exists
-    print(f"Verifying if the file '{pdf_path}' exists...")
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-    print(f"File '{pdf_path}' found.")
+def main(pdf_folder):
+    # Verify the folder exists
+    print(f"Verifying if the folder '{pdf_folder}' exists...")
+    if not os.path.exists(pdf_folder):
+        raise FileNotFoundError(f"Folder not found: {pdf_folder}")
+    print(f"Folder '{pdf_folder}' found.")
 
-    # Convert PDF to images
-    images = pdf_to_images(pdf_path)
-    print(f"Converted PDF to {len(images)} image(s).")
+    # Get all PDF files in the folder
+    pdf_files = [f for f in os.listdir(pdf_folder) if f.endswith(".pdf")]
+    if not pdf_files:
+        print(f"No PDF files found in folder '{pdf_folder}'.")
+        return
 
-    # Extract text from images
-    full_text = ""
-    for i, image in enumerate(images, start=1):
-        print(f"Processing image {i}/{len(images)}...")
-        text = extract_text_from_image(image)
-        full_text += text + "\n"
+    print(f"Found {len(pdf_files)} PDF file(s) in folder '{pdf_folder}': {pdf_files}")
 
-    print("All images processed. Extracted text:")
-    print(full_text)
+    # Process each PDF file
+    for pdf_file in pdf_files:
+        pdf_path = os.path.join(pdf_folder, pdf_file)
+        print(f"\nProcessing file: {pdf_file}")
 
-    # Parse the extracted text
-    main_recipe, alternative_recipes = parse_recipe_text(full_text)
-    if not main_recipe[1]:  # Check title instead of index 0 (now emoji)
-        main_recipe = (
-            "🍽️",  # Default emoji
-            "Untitled Recipe",
-            None,
-            False,
-            main_recipe[4],
-            main_recipe[5],
-            main_recipe[6],
-        )
+        try:
+            # Convert PDF to images
+            images = pdf_to_images(pdf_path)
+            print(f"Converted PDF to {len(images)} image(s).")
 
-    # Create Notion page
-    status_code, response = create_notion_page(main_recipe, alternative_recipes)
-    if status_code == 200:
-        print(f"Recipe '{main_recipe[1]}' successfully uploaded to Notion.")
-    else:
-        print(f"Failed to upload recipe. Response: {response}")
+            # Extract text from images
+            full_text = ""
+            for i, image in enumerate(images, start=1):
+                print(f"Processing image {i}/{len(images)}...")
+                text = extract_text_from_image(image)
+                full_text += text + "\n"
 
-    # Generate and save recipe image
-    print("Starting image generation process...")
-    image_file = generate_recipe_image(main_recipe[1], full_text)
-    if image_file:
-        print(f"Recipe image saved to {image_file}")
-    else:
-        print("No recipe image was generated.")
+            print("All images processed. Extracted text:")
+            # print(full_text)
+
+            # Parse the extracted text
+            main_recipe, alternative_recipes = parse_recipe_text(full_text)
+            print(f"Parsed main recipe: {main_recipe}")
+            if not main_recipe[1]:  # Check title instead of index 0 (now emoji)
+                main_recipe = (
+                    "🍽️",  # Default emoji
+                    "Untitled Recipe",
+                    None,
+                    False,
+                    main_recipe[4],
+                    main_recipe[5],
+                    main_recipe[6],
+                )
+
+            # Create Notion page
+            status_code, response = create_notion_page(main_recipe, alternative_recipes)
+            if status_code == 200:
+                print(f"Recipe '{main_recipe[1]}' successfully uploaded to Notion.")
+            else:
+                print(f"Failed to upload recipe. Response: {response}")
+
+            # Generate and save recipe image
+            print("Starting image generation process...")
+            image_file = generate_recipe_image(main_recipe[1], full_text)
+            if image_file:
+                print(f"Recipe image saved to {image_file}")
+            else:
+                print("No recipe image was generated.")
+
+        except Exception as e:
+            print(f"An error occurred while processing '{pdf_file}': {e}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert recipe PDF to Notion page")
-    parser.add_argument("pdf_path", help="Path to the recipe PDF file")
+    parser = argparse.ArgumentParser(
+        description="Convert recipe PDFs in a folder to Notion pages"
+    )
+    parser.add_argument(
+        "pdf_folder", help="Path to the folder containing recipe PDF files"
+    )
     args = parser.parse_args()
 
-    print("Starting the recipe-to-Notion process...")
-    main(args.pdf_path)
+    print("Starting the recipe-to-Notion process for all PDFs in the folder...")
+    main(args.pdf_folder)
     print("Process completed.")
