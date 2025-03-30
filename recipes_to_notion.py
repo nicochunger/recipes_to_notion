@@ -1,11 +1,13 @@
 import argparse
 import base64
 import os
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from google import genai  # Revert to using Google's Gemini API
 from notion_client import Client
 from pdf2image import convert_from_path
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -21,6 +23,22 @@ IMAGE_MODEL = "gemini-2.0-flash-exp-image-generation"  # Model for image generat
 # Configure clients
 genai_client = genai.Client(api_key=GEMINI_API_KEY)  # Revert to Google Gemini client
 notion = Client(auth=NOTION_TOKEN)
+
+
+# Define the Schema for the recipes
+class Recipe(BaseModel):
+    emoji: Optional[str]  # Made optional
+    title: str
+    portions: Optional[int]
+    vegetarian: Optional[bool]  # Made optional
+    ingredients: List[str]
+    instructions: List[str]
+    notes: Optional[List[str]]  # Made optional
+
+
+class RecipeExtractionResponse(BaseModel):
+    main_recipe: Recipe
+    alternative_recipes: Optional[List[Recipe]]  # Made optional
 
 
 def pdf_to_images(pdf_path):
@@ -63,120 +81,63 @@ def extract_text_from_image(image):
 
     If any ingredient has the quantity "C/N", replace it with "a gusto".
 
-    Use the following exact format for your response. Make sure to include all the sections and 
-    their title as "[Section]: [Content]". Here is the recipe:
-    
-    Emoji: [Choose one appropriate emoji that best represents this recipe]
-    Title: [Recipe Title]
-    Portions: [number of portions/servings]
-    Vegetarian: [yes/no - determine if the recipe is vegetarian based on ingredients]
-    Ingredients:
-    - [list of ingredients]
-    Instructions:
-    - [list of instructions. Put each sentence on a new line]
-    Notes:
-    - [any additional notes that appear handwritten at the bottom]
+    Make sure to include an actual emoji that represents the recipe.
 
-        Alternative Recipes:
-    1.
-    Title: [Recipe Title]
-    Portions: [number of portions/servings]
-    Vegetarian: [yes/no]
-    Ingredients:
-    - [list of ingredients]
-    Instructions:
-    - [list of instructions]
-    2.
-    (same format as before and so on for each recipe)
+    Ensure that the output is valid JSON and exactly follows the provided schema.
     """
 
     # Call the Gemini API to generate content
     response = gemini_call(
         model=TEXT_MODEL,
         contents=[prompt, image],
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": RecipeExtractionResponse,
+        },
     )
-    print("Text extraction completed.")
-    return response.text
+
+    # The returned response will be a JSON string, but you can also use the parsed Pydantic model.
+    structured_recipes: RecipeExtractionResponse = response.parsed
+    print("Recipe extraction completed.")
+
+    return structured_recipes
 
 
-def parse_recipe_text(text):
-    """Parse the recipe text into main recipe and alternative recipes."""
-    print("Parsing extracted text into structured recipe data...")
-    sections = text.split("Alternative Recipes:")
-    main_recipe = sections[0]
-    alternative_recipes = []
+def parse_recipe_text(response: RecipeExtractionResponse):
+    """Parse the structured JSON response into main recipe and alternative recipes."""
+    print("Parsing structured recipe data...")
 
-    def parse_single_recipe(recipe_text):
-        lines = recipe_text.split("\n")
-        emoji = ""
-        title = ""
-        portions = None
-        vegetarian = False
-        ingredients = []
-        instructions = []
-        notes = []
-        current_section = None
+    # Extract main recipe
+    main_recipe = (
+        response.main_recipe.emoji or "🍽️",  # Default emoji if missing
+        response.main_recipe.title,
+        response.main_recipe.portions,
+        response.main_recipe.vegetarian or False,  # Default to False if missing
+        response.main_recipe.ingredients,
+        response.main_recipe.instructions,
+        response.main_recipe.notes or [],  # Default to empty list if missing
+    )
 
-        for line in lines:
-            line = line.strip()
-            if line.startswith("Emoji:"):
-                emoji = line.replace("Emoji:", "").strip()
-            elif line.startswith("Title:"):
-                title = line.replace("Title:", "").strip()
-            elif line.startswith("Portions:"):
-                try:
-                    portions = int(line.replace("Portions:", "").strip().split()[0])
-                except:
-                    portions = None
-            elif line.startswith("Vegetarian:"):
-                vegetarian = "yes" in line.lower()
-            elif line.startswith("Ingredients:"):
-                current_section = "ingredients"
-            elif line.startswith("Instructions:"):
-                current_section = "instructions"
-            elif line.startswith("Notes:"):
-                current_section = "notes"
-            elif line and line.startswith("-"):
-                if current_section == "ingredients":
-                    ingredients.append(line[1:].strip())
-                elif current_section == "instructions":
-                    instructions.append(line[1:].strip())
-                elif current_section == "notes":
-                    notes.append(line[1:].strip())
+    print(f"Main recipe: {response.main_recipe.title}")
 
-        return emoji, title, portions, vegetarian, ingredients, instructions, notes
-
-    (
-        main_emoji,
-        main_title,
-        main_portions,
-        main_vegetarian,
-        main_ingredients,
-        main_instructions,
-        main_notes,
-    ) = parse_single_recipe(main_recipe)
-
-    if len(sections) > 1:
-        alt_recipes_text = sections[1]
-        import re
-
-        alt_recipe_sections = re.split(r"\d+\.", alt_recipes_text)
-        for section in alt_recipe_sections:
-            if section.strip():
-                recipe = parse_single_recipe(section)
-                if recipe[1]:  # If there's a title
-                    alternative_recipes.append(recipe)
+    # Extract alternative recipes
+    alternative_recipes = [
+        (
+            alt_recipe.emoji or "🍽️",  # Default emoji if missing
+            alt_recipe.title,
+            alt_recipe.portions,
+            alt_recipe.vegetarian or False,  # Default to False if missing
+            alt_recipe.ingredients,
+            alt_recipe.instructions,
+            alt_recipe.notes or [],  # Default to empty list if missing
+        )
+        for alt_recipe in (
+            response.alternative_recipes or []
+        )  # Handle missing alternatives
+    ]
 
     print("Parsing completed.")
-    return (
-        main_emoji,
-        main_title,
-        main_portions,
-        main_vegetarian,
-        main_ingredients,
-        main_instructions,
-        main_notes,
-    ), alternative_recipes
+    return main_recipe, alternative_recipes
 
 
 def create_notion_page(main_recipe, alternative_recipes):
@@ -480,7 +441,7 @@ def create_notion_page(main_recipe, alternative_recipes):
 
 
 def generate_recipe_image(recipe_title, recipe_text):
-    """Generate an image using Gemini 2.5 Pro for prompt generation and Gemini 2.0 Flash Experimental for image generation."""
+    """Generate an image using Gemini 2.0 Flash Experimental."""
     print(f"Generating image for recipe: {recipe_title}...")
     import re
     from io import BytesIO
@@ -488,8 +449,8 @@ def generate_recipe_image(recipe_title, recipe_text):
     from google.genai import types
     from PIL import Image
 
-    # Step 1: Generate the image generation prompt using Gemini 2.5 Pro
-    print("Generating detailed image generation prompt using Gemini 2.5 Pro...")
+    # Step 1: Generate the image generation prompt
+    print("Generating detailed image generation prompt...")
     prompt_for_prompt = f"""
     I want you to write out a prompt for an LLM that creates images. Again you will just write the 
     prompt itself. I have a base prompt, but you should fill it out with details about the dish. 
@@ -548,28 +509,14 @@ def process_pdf(pdf_path):
         print(f"Converted PDF to {len(images)} image(s).")
 
         # Extract text from images
-        full_text = ""
         for i, image in enumerate(images, start=1):
             print(f"Processing image {i}/{len(images)}...")
-            text = extract_text_from_image(image)
-            full_text += text + "\n"
+            structured_response = extract_text_from_image(image)
 
-        print("All images processed. Extracted text:")
-        # print(full_text)
+        print("All images processed. Extracted structured response.")
 
-        # Parse the extracted text
-        main_recipe, alternative_recipes = parse_recipe_text(full_text)
-        print(f"Parsed main recipe: {main_recipe}")
-        if not main_recipe[1]:  # Check title instead of index 0 (now emoji)
-            main_recipe = (
-                "🍽️",  # Default emoji
-                "Untitled Recipe",
-                None,
-                False,
-                main_recipe[4],
-                main_recipe[5],
-                main_recipe[6],
-            )
+        # Parse the structured response
+        main_recipe, alternative_recipes = parse_recipe_text(structured_response)
 
         # Create Notion page
         status_code, response = create_notion_page(main_recipe, alternative_recipes)
@@ -580,11 +527,7 @@ def process_pdf(pdf_path):
 
         # Generate and save recipe image
         print("Starting image generation process...")
-        image_file = generate_recipe_image(main_recipe[1], full_text)
-        if image_file:
-            print(f"Recipe image saved to {image_file}")
-        else:
-            print("No recipe image was generated.")
+        generate_recipe_image(main_recipe[1], structured_response.model_dump_json())
 
     except Exception as e:
         print(f"An error occurred while processing '{pdf_path}': {e}")
