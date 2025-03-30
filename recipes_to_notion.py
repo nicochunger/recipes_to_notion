@@ -501,7 +501,8 @@ def generate_recipe_image(recipe_title, recipe_text):
 
 def process_pdf(pdf_path):
     """Process a single PDF file."""
-    print(f"\nProcessing file: {pdf_path}")
+    print("\n--------------------------")
+    print(f"Processing file: {pdf_path}")
 
     try:
         # Convert PDF to images
